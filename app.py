@@ -4,341 +4,526 @@ import numpy as np
 import requests
 import plotly.express as px
 
+# ============================================================
+# AI FORENSIC ACCOUNTING ENGINE v1.3
+# Streamlit Version
+#
+# Fixes:
+# - Missing XBRL tags no longer crash the app
+# - Receivables / Inventory / Cash / Equity etc. are auto-created if absent
+# - Basic tag fallback hierarchy
+# - Safer latest-row selection
+# - Clear warning when data is insufficient
+# ============================================================
+
 st.set_page_config(
     page_title="AI Forensic Accounting Engine",
     layout="wide"
 )
 
 st.title("AI Forensic Accounting Engine")
+st.caption("SEC 10-K / 10-Q based forensic accounting dashboard")
 
-ticker = st.text_input("Ticker", "NVDA")
+ticker = st.text_input("Ticker", "NVDA").upper().strip()
+wacc = st.number_input("WACC", min_value=0.00, max_value=0.30, value=0.10, step=0.01)
 
+# SEC requires a User-Agent.
+# You can replace this with your real email.
 USER_AGENT = "your_email@example.com"
+headers = {"User-Agent": USER_AGENT}
 
-headers = {
-    "User-Agent": USER_AGENT
-}
 
 def safe_div(a, b):
-
     out = a / b
-
-    out = out.replace(
-        [np.inf, -np.inf],
-        np.nan
-    )
-
+    if isinstance(out, pd.Series):
+        out = out.replace([np.inf, -np.inf], np.nan)
+    elif np.isinf(out):
+        out = np.nan
     return out
+
+
+def get_sec_json(url):
+    r = requests.get(url, headers=headers, timeout=30)
+    if r.status_code != 200:
+        raise RuntimeError(f"SEC request failed: {r.status_code}")
+    return r.json()
+
 
 if st.button("Analyze"):
 
-    ticker_url = "https://www.sec.gov/files/company_tickers.json"
+    try:
+        # ========================================================
+        # TICKER -> CIK
+        # ========================================================
 
-    tickers = requests.get(
-        ticker_url,
-        headers=headers
-    ).json()
+        ticker_url = "https://www.sec.gov/files/company_tickers.json"
+        tickers = get_sec_json(ticker_url)
 
-    ticker_df = pd.DataFrame(tickers).T
+        ticker_df = pd.DataFrame(tickers).T
+        ticker_df["ticker"] = ticker_df["ticker"].str.upper()
 
-    ticker_df["ticker"] = (
-        ticker_df["ticker"]
-        .str.upper()
-    )
+        row = ticker_df[ticker_df["ticker"] == ticker]
 
-    row = ticker_df[
-        ticker_df["ticker"] == ticker.upper()
-    ]
+        if row.empty:
+            st.error(f"Ticker not found: {ticker}")
+            st.stop()
 
-    if row.empty:
-        st.error("Ticker not found")
-        st.stop()
+        cik = str(row.iloc[0]["cik_str"]).zfill(10)
+        company_name = row.iloc[0]["title"]
 
-    cik = str(row.iloc[0]["cik_str"]).zfill(10)
+        st.subheader(company_name)
+        st.caption(f"Ticker: {ticker} | CIK: {cik}")
 
-    company_name = row.iloc[0]["title"]
+        # ========================================================
+        # COMPANYFACTS
+        # ========================================================
 
-    st.subheader(company_name)
+        url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+        data = get_sec_json(url)
 
-    url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+        facts = data.get("facts", {}).get("us-gaap", {})
 
-    data = requests.get(
-        url,
-        headers=headers
-    ).json()
+        if not facts:
+            st.error("No us-gaap facts found for this company.")
+            st.stop()
 
-    facts = data.get("facts", {}).get("us-gaap", {})
+        # ========================================================
+        # HELPERS
+        # ========================================================
 
-    def get_fact(tag):
+        def get_fact(tag):
+            if tag not in facts:
+                return pd.DataFrame()
 
-        if tag not in facts:
-            return pd.DataFrame()
+            units = facts[tag].get("units", {})
+            frames = []
 
-        units = facts[tag].get("units", {})
+            for unit, vals in units.items():
+                temp = pd.DataFrame(vals)
 
-        frames = []
+                if temp.empty:
+                    continue
 
-        for unit, vals in units.items():
+                temp["tag"] = tag
+                temp["unit"] = unit
+                frames.append(temp)
 
-            temp = pd.DataFrame(vals)
+            if not frames:
+                return pd.DataFrame()
+
+            return pd.concat(frames, ignore_index=True)
+
+
+        def series_for_tag(tag):
+            raw = get_fact(tag)
+
+            if raw.empty:
+                return pd.DataFrame(columns=["date", tag])
+
+            required = {"form", "unit", "end", "val"}
+            if not required.issubset(set(raw.columns)):
+                return pd.DataFrame(columns=["date", tag])
+
+            temp = raw[
+                (raw["form"].isin(["10-Q", "10-Q/A", "10-K", "10-K/A"])) &
+                (raw["unit"] == "USD")
+            ].copy()
 
             if temp.empty:
+                return pd.DataFrame(columns=["date", tag])
+
+            temp["date"] = pd.to_datetime(temp["end"], errors="coerce")
+            temp["filed"] = pd.to_datetime(temp.get("filed"), errors="coerce")
+
+            temp = temp.dropna(subset=["date"])
+
+            # Same end-date can appear multiple times. Keep the latest filing.
+            temp = (
+                temp.sort_values(["date", "filed"])
+                .drop_duplicates("date", keep="last")
+            )
+
+            return temp[["date", "val"]].rename(columns={"val": tag})
+
+
+        def resolve_metric(metric_name, tag_candidates):
+            best = None
+            best_tag = None
+            best_count = -1
+
+            for tag in tag_candidates:
+                s = series_for_tag(tag)
+
+                if s.empty:
+                    continue
+
+                count = s[tag].notna().sum()
+
+                if count > best_count:
+                    best = s
+                    best_tag = tag
+                    best_count = count
+
+            if best is None:
+                return pd.DataFrame(columns=["date", metric_name]), None
+
+            return best.rename(columns={best_tag: metric_name}), best_tag
+
+
+        # ========================================================
+        # TAG MAP
+        # ========================================================
+
+        TAG_MAP = {
+            "Revenue": [
+                "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "SalesRevenueNet",
+                "Revenues"
+            ],
+            "OperatingIncome": [
+                "OperatingIncomeLoss",
+                "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"
+            ],
+            "PretaxIncome": [
+                "IncomeBeforeTaxExpenseBenefit",
+                "IncomeBeforeIncomeTaxes",
+                "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"
+            ],
+            "IncomeTax": [
+                "IncomeTaxExpenseBenefit",
+                "CurrentIncomeTaxExpenseBenefit",
+                "IncomeTaxesPaidNet"
+            ],
+            "NetIncome": [
+                "NetIncomeLoss",
+                "ProfitLoss"
+            ],
+            "CFO": [
+                "NetCashProvidedByUsedInOperatingActivities",
+                "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"
+            ],
+            "Capex": [
+                "PaymentsToAcquirePropertyPlantAndEquipment",
+                "PaymentsToAcquireProductiveAssets",
+                "CapitalExpendituresIncurredButNotYetPaid"
+            ],
+            "Assets": [
+                "Assets"
+            ],
+            "Liabilities": [
+                "Liabilities"
+            ],
+            "Equity": [
+                "StockholdersEquity",
+                "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"
+            ],
+            "Cash": [
+                "CashAndCashEquivalentsAtCarryingValue",
+                "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"
+            ],
+            "Receivables": [
+                "AccountsReceivableNetCurrent",
+                "AccountsReceivableNet",
+                "ReceivablesNetCurrent",
+                "ReceivablesNet"
+            ],
+            "Inventory": [
+                "InventoryNet",
+                "InventoryFinishedGoodsNetOfReserves",
+                "InventoryRawMaterialsAndPurchasedPartsNetOfReserves"
+            ],
+            "SBC": [
+                "ShareBasedCompensation",
+                "ShareBasedCompensationArrangementByShareBasedPaymentAwardExpense"
+            ],
+            "OperatingLeaseLiability": [
+                "OperatingLeaseLiability",
+                "OperatingLeaseLiabilityCurrent",
+                "OperatingLeaseLiabilityNoncurrent"
+            ],
+            "DeferredRevenue": [
+                "ContractWithCustomerLiabilityCurrent",
+                "DeferredRevenueCurrent",
+                "DeferredRevenueAndCreditsCurrent"
+            ]
+        }
+
+        # ========================================================
+        # BUILD DATAFRAME
+        # ========================================================
+
+        master = None
+        used_tags = {}
+
+        for metric, candidates in TAG_MAP.items():
+            s, used_tag = resolve_metric(metric, candidates)
+            used_tags[metric] = used_tag if used_tag else "NOT FOUND"
+
+            if s.empty:
                 continue
 
-            temp["tag"] = tag
-            temp["unit"] = unit
+            if master is None:
+                master = s
+            else:
+                master = master.merge(s, on="date", how="outer")
 
-            frames.append(temp)
+        if master is None or master.empty:
+            st.error("No usable financial facts found.")
+            st.stop()
 
-        if not frames:
-            return pd.DataFrame()
+        df = master.sort_values("date").reset_index(drop=True)
 
-        return pd.concat(frames, ignore_index=True)
+        for col in df.columns:
+            if col != "date":
+                df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    def quarterly_series(tag):
+        # ========================================================
+        # REQUIRED COLUMNS
+        # ========================================================
 
-        df = get_fact(tag)
+        required_cols = [
+            "Revenue",
+            "OperatingIncome",
+            "PretaxIncome",
+            "IncomeTax",
+            "NetIncome",
+            "CFO",
+            "Capex",
+            "Assets",
+            "Liabilities",
+            "Equity",
+            "Cash",
+            "Receivables",
+            "Inventory",
+            "SBC",
+            "OperatingLeaseLiability",
+            "DeferredRevenue"
+        ]
 
-        if df.empty:
-            return pd.DataFrame(columns=["date", tag])
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = np.nan
 
-        required = {"form", "unit", "end", "val"}
+        # Some missing balance sheet items can be zero for ratio safety.
+        for col in ["Cash", "Receivables", "Inventory", "SBC", "OperatingLeaseLiability", "DeferredRevenue"]:
+            df[col] = df[col].fillna(0)
 
-        if not required.issubset(set(df.columns)):
-            return pd.DataFrame(columns=["date", tag])
+        # ========================================================
+        # TTM CALCULATIONS
+        # Note: SEC companyfacts may mix quarterly and YTD values.
+        # This is a pragmatic v1.3 approximation, not full quarterization.
+        # ========================================================
 
-        temp = df[
-            (df["form"].isin(["10-Q", "10-K"])) &
-            (df["unit"] == "USD")
-        ].copy()
+        flow_cols = [
+            "Revenue",
+            "OperatingIncome",
+            "PretaxIncome",
+            "IncomeTax",
+            "NetIncome",
+            "CFO",
+            "Capex",
+            "SBC"
+        ]
 
-        if temp.empty:
-            return pd.DataFrame(columns=["date", tag])
+        for col in flow_cols:
+            df[f"{col}_TTM"] = df[col].rolling(4, min_periods=4).sum()
 
-        temp["date"] = pd.to_datetime(
-            temp["end"],
-            errors="coerce"
+        # Tax rate
+        df["TaxRate"] = safe_div(df["IncomeTax_TTM"], df["PretaxIncome_TTM"])
+        df["TaxRate"] = (
+            df["TaxRate"]
+            .replace([np.inf, -np.inf], np.nan)
+            .clip(lower=0, upper=0.35)
+            .fillna(0.21)
         )
 
-        temp = (
-            temp.sort_values("date")
-            .drop_duplicates("date", keep="last")
+        # NOPAT
+        df["NOPAT_TTM"] = df["OperatingIncome_TTM"] * (1 - df["TaxRate"])
+        df["NOPAT_TTM"] = df["NOPAT_TTM"].fillna(df["PretaxIncome_TTM"] * (1 - df["TaxRate"]))
+
+        # Invested capital
+        df["InvestedCapital"] = (
+            df["Equity"].fillna(0)
+            + df["Liabilities"].fillna(0)
+            - df["Cash"].fillna(0)
+            + df["OperatingLeaseLiability"].fillna(0)
         )
 
-        return temp[["date", "val"]].rename(
-            columns={"val": tag}
-        )
+        df["InvestedCapital"] = df["InvestedCapital"].replace(0, np.nan)
+        df["AvgIC"] = df["InvestedCapital"].rolling(2, min_periods=2).mean()
 
-    TAGS = {
+        # Core metrics
+        df["ROIC_TTM"] = safe_div(df["NOPAT_TTM"], df["AvgIC"])
+        df["ROIC_WACC_Spread"] = df["ROIC_TTM"] - wacc
+        df["EconomicEarnings_TTM"] = df["NOPAT_TTM"] - wacc * df["AvgIC"]
 
-        "Revenue": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        # Accruals
+        df["Accruals_TTM"] = df["NetIncome_TTM"] - df["CFO_TTM"]
+        df["AvgAssets"] = df["Assets"].rolling(2, min_periods=2).mean()
+        df["AccrualRatio"] = safe_div(df["Accruals_TTM"], df["AvgAssets"])
 
-        "OperatingIncome": "OperatingIncomeLoss",
+        # Cash conversion
+        df["CFO_to_NI"] = safe_div(df["CFO_TTM"], df["NetIncome_TTM"])
+        df["FCF_TTM"] = df["CFO_TTM"] - df["Capex_TTM"].abs()
+        df["FCF_to_NI"] = safe_div(df["FCF_TTM"], df["NetIncome_TTM"])
 
-        "NetIncome": "NetIncomeLoss",
+        # Quality ratios
+        df["SBC_to_Revenue"] = safe_div(df["SBC_TTM"], df["Revenue_TTM"])
+        df["DSO"] = safe_div(df["Receivables"], df["Revenue_TTM"] / 365)
+        df["InventoryDays"] = safe_div(df["Inventory"], df["Revenue_TTM"] / 365)
 
-        "CFO": "NetCashProvidedByUsedInOperatingActivities",
+        # ========================================================
+        # FORENSIC SCORE
+        # ========================================================
 
-        "Assets": "Assets",
+        scores = []
+        flags = []
 
-        "Liabilities": "Liabilities",
+        for _, row in df.iterrows():
+            score = 0
+            f = []
 
-        "Equity": "StockholdersEquity",
+            if pd.notna(row["AccrualRatio"]):
+                if row["AccrualRatio"] > 0.10:
+                    score += 25
+                    f.append("Accrual distortion severe")
+                elif row["AccrualRatio"] > 0.05:
+                    score += 15
+                    f.append("Accrual distortion moderate")
 
-        "Cash": "CashAndCashEquivalentsAtCarryingValue",
+            if pd.notna(row["CFO_to_NI"]) and row["NetIncome_TTM"] > 0:
+                if row["CFO_to_NI"] < 0.80:
+                    score += 20
+                    f.append("Weak CFO conversion")
+                elif row["CFO_to_NI"] < 1.00:
+                    score += 10
+                    f.append("CFO below NI")
 
-        "Receivables": "AccountsReceivableNetCurrent",
+            if pd.notna(row["SBC_to_Revenue"]):
+                if row["SBC_to_Revenue"] > 0.15:
+                    score += 20
+                    f.append("High SBC burden")
+                elif row["SBC_to_Revenue"] > 0.08:
+                    score += 10
+                    f.append("Moderate SBC burden")
 
-        "Inventory": "InventoryNet",
+            if pd.notna(row["DSO"]):
+                if row["DSO"] > 90:
+                    score += 15
+                    f.append("High DSO")
+                elif row["DSO"] > 60:
+                    score += 10
+                    f.append("Moderate DSO")
 
-        "SBC": "ShareBasedCompensation"
+            if pd.notna(row["InventoryDays"]):
+                if row["InventoryDays"] > 120:
+                    score += 15
+                    f.append("Inventory buildup")
+                elif row["InventoryDays"] > 90:
+                    score += 10
+                    f.append("Moderate inventory buildup")
 
-    }
+            if pd.notna(row["ROIC_WACC_Spread"]):
+                if row["ROIC_WACC_Spread"] < 0:
+                    score += 15
+                    f.append("ROIC below WACC")
 
-    master = None
+            scores.append(min(score, 100))
+            flags.append("; ".join(f) if f else "No major red flags")
 
-    for metric, tag in TAGS.items():
+        df["ForensicRiskScore"] = scores
+        df["QualityScore"] = 100 - df["ForensicRiskScore"]
+        df["Flags"] = flags
 
-        s = quarterly_series(tag)
+        # Use the latest row with enough calculated data.
+        valid = df.dropna(subset=["ROIC_TTM", "AccrualRatio"], how="all")
 
-        if s.empty:
-            continue
-
-        s = s.rename(columns={tag: metric})
-
-        if master is None:
-            master = s
+        if valid.empty:
+            st.warning("Data loaded, but insufficient calculated TTM metrics for this ticker.")
+            latest = df.iloc[-1]
         else:
-            master = master.merge(
-                s,
-                on="date",
-                how="outer"
-            )
+            latest = valid.iloc[-1]
 
-    df = master.sort_values("date")
+        # ========================================================
+        # KPI
+        # ========================================================
 
-    for col in df.columns:
+        def pct_fmt(x):
+            return "NA" if pd.isna(x) else f"{x * 100:.1f}%"
 
-        if col != "date":
-            df[col] = pd.to_numeric(
-                df[col],
-                errors="coerce"
-            )
+        def num_fmt(x):
+            return "NA" if pd.isna(x) else f"{x:.1f}"
 
-    flow_cols = [
-        "Revenue",
-        "OperatingIncome",
-        "NetIncome",
-        "CFO",
-        "SBC"
-    ]
+        c1, c2, c3, c4, c5 = st.columns(5)
 
-    for col in flow_cols:
+        c1.metric("ROIC", pct_fmt(latest.get("ROIC_TTM")))
+        c2.metric("Accrual Ratio", pct_fmt(latest.get("AccrualRatio")))
+        c3.metric("CFO / NI", num_fmt(latest.get("CFO_to_NI")))
+        c4.metric("DSO", num_fmt(latest.get("DSO")))
+        c5.metric("Risk Score", "NA" if pd.isna(latest.get("ForensicRiskScore")) else int(latest.get("ForensicRiskScore")))
 
-        df[f"{col}_TTM"] = (
-            df[col]
-            .rolling(4)
-            .sum()
-        )
+        st.info(f"Flags: {latest.get('Flags', 'NA')}")
 
-    df["NOPAT_TTM"] = (
-        df["OperatingIncome_TTM"] *
-        (1 - 0.21)
-    )
+        # ========================================================
+        # TABLES
+        # ========================================================
 
-    df["InvestedCapital"] = (
-        df["Equity"]
-        + df["Liabilities"]
-        - df["Cash"]
-    )
+        with st.expander("Resolved XBRL Tags"):
+            st.dataframe(pd.DataFrame(
+                [{"Metric": k, "ResolvedTag": v} for k, v in used_tags.items()]
+            ), use_container_width=True)
 
-    df["AvgIC"] = (
-        df["InvestedCapital"]
-        .rolling(2)
-        .mean()
-    )
+        display_cols = [
+            "date",
+            "Revenue_TTM",
+            "NOPAT_TTM",
+            "ROIC_TTM",
+            "ROIC_WACC_Spread",
+            "EconomicEarnings_TTM",
+            "AccrualRatio",
+            "CFO_to_NI",
+            "FCF_to_NI",
+            "SBC_to_Revenue",
+            "DSO",
+            "InventoryDays",
+            "ForensicRiskScore",
+            "QualityScore",
+            "Flags"
+        ]
 
-    df["ROIC_TTM"] = safe_div(
-        df["NOPAT_TTM"],
-        df["AvgIC"]
-    )
+        existing_display_cols = [c for c in display_cols if c in df.columns]
 
-    df["Accruals"] = (
-        df["NetIncome_TTM"] -
-        df["CFO_TTM"]
-    )
+        st.subheader("Forensic Dashboard")
+        st.dataframe(df[existing_display_cols].tail(20), use_container_width=True)
 
-    df["AvgAssets"] = (
-        df["Assets"]
-        .rolling(2)
-        .mean()
-    )
+        # ========================================================
+        # CHARTS
+        # ========================================================
 
-    df["AccrualRatio"] = safe_div(
-        df["Accruals"],
-        df["AvgAssets"]
-    )
+        plot_df = df.copy()
+        plot_df["ROIC_pct"] = plot_df["ROIC_TTM"] * 100
+        plot_df["Accrual_pct"] = plot_df["AccrualRatio"] * 100
+        plot_df["SBC_pct"] = plot_df["SBC_to_Revenue"] * 100
 
-    df["CFO_to_NI"] = safe_div(
-        df["CFO_TTM"],
-        df["NetIncome_TTM"]
-    )
+        st.subheader("Charts")
 
-    df["SBC_to_Revenue"] = safe_div(
-        df["SBC_TTM"],
-        df["Revenue_TTM"]
-    )
+        fig1 = px.line(plot_df, x="date", y="ROIC_pct", title="ROIC")
+        st.plotly_chart(fig1, use_container_width=True)
 
-    df["DSO"] = safe_div(
-        df["Receivables"],
-        df["Revenue_TTM"] / 365
-    )
+        fig2 = px.line(plot_df, x="date", y="Accrual_pct", title="Accrual Ratio")
+        st.plotly_chart(fig2, use_container_width=True)
 
-    df["InventoryDays"] = safe_div(
-        df["Inventory"],
-        df["Revenue_TTM"] / 365
-    )
+        fig3 = px.line(plot_df, x="date", y="DSO", title="DSO")
+        st.plotly_chart(fig3, use_container_width=True)
 
-    scores = []
+        fig4 = px.line(plot_df, x="date", y="InventoryDays", title="Inventory Days")
+        st.plotly_chart(fig4, use_container_width=True)
 
-    for idx, row in df.iterrows():
+        fig5 = px.bar(plot_df, x="date", y="ForensicRiskScore", title="Forensic Risk Score")
+        st.plotly_chart(fig5, use_container_width=True)
 
-        score = 0
+        st.caption("Note: v1.3 uses pragmatic TTM approximation from SEC companyfacts. Full quarterization is planned for v1.4.")
 
-        if pd.notna(row["AccrualRatio"]):
-
-            if row["AccrualRatio"] > 0.10:
-                score += 25
-
-        if pd.notna(row["CFO_to_NI"]):
-
-            if row["CFO_to_NI"] < 0.8:
-                score += 20
-
-        scores.append(min(score, 100))
-
-    df["ForensicRiskScore"] = scores
-
-    latest = df.iloc[-1]
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric(
-        "ROIC",
-        f"{latest['ROIC_TTM']*100:.1f}%"
-    )
-
-    col2.metric(
-        "Accrual Ratio",
-        f"{latest['AccrualRatio']*100:.1f}%"
-    )
-
-    col3.metric(
-        "DSO",
-        f"{latest['DSO']:.1f}"
-    )
-
-    col4.metric(
-        "Risk Score",
-        f"{latest['ForensicRiskScore']}"
-    )
-
-    st.subheader("Forensic Dashboard")
-
-    st.dataframe(df.tail(12))
-
-    fig1 = px.line(
-        df,
-        x="date",
-        y=df["ROIC_TTM"] * 100,
-        title="ROIC"
-    )
-
-    st.plotly_chart(
-        fig1,
-        use_container_width=True
-    )
-
-    fig2 = px.line(
-        df,
-        x="date",
-        y="DSO",
-        title="DSO"
-    )
-
-    st.plotly_chart(
-        fig2,
-        use_container_width=True
-    )
-
-    fig3 = px.bar(
-        df,
-        x="date",
-        y="ForensicRiskScore",
-        title="Forensic Risk Score"
-    )
-
-    st.plotly_chart(
-        fig3,
-        use_container_width=True
-    )
+    except Exception as e:
+        st.error("The app encountered an error.")
+        st.exception(e)
