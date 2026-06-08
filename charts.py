@@ -1,96 +1,317 @@
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-def render_trend_charts(result):
-    df = result["df"].copy()
-    df["ROIC_pct"] = df["ROIC_TTM"] * 100
-    df["Accrual_pct"] = df["AccrualRatio"] * 100
-    df["Risk"] = df["ForensicRiskScore"]
+# ==========================================================
 
-    c1, c2 = st.columns(2)
+# Score Normalization
 
-    with c1:
-        fig = px.line(df, x="date", y="ROIC_pct", title="ROIC trend")
-        st.plotly_chart(fig, use_container_width=True)
+# ==========================================================
 
-    with c2:
-        fig = px.line(df, x="date", y="Accrual_pct", title="Accrual trend")
-        st.plotly_chart(fig, use_container_width=True)
+def score_clip(x, low=0, high=100):
+if pd.isna(x):
+return 0
+return max(low, min(high, float(x)))
 
-    c3, c4 = st.columns(2)
+def quality_scores(row):
 
-    with c3:
-        fig = px.bar(df, x="date", y="Risk", title="Forensic risk trend")
-        st.plotly_chart(fig, use_container_width=True)
+```
+roic = row.get("ROIC", np.nan)
+accrual = row.get("Accrual", np.nan)
+cfo = row.get("CFO/NI", np.nan)
+sbc = row.get("SBC/Revenue", np.nan)
+risk = row.get("Risk", np.nan)
 
-    with c4:
-        fig = px.line(df, x="date", y="DSO", title="DSO")
-        st.plotly_chart(fig, use_container_width=True)
+# ROIC
+if pd.notna(roic):
+    roic_score = score_clip((roic / 0.50) * 100)
+else:
+    roic_score = 0
+
+# Accrual
+if pd.notna(accrual):
+    accrual_score = score_clip(
+        100 - abs(accrual) * 500
+    )
+else:
+    accrual_score = 0
+
+# CFO conversion
+if pd.notna(cfo):
+    cfo_score = score_clip(
+        (cfo / 1.5) * 100
+    )
+else:
+    cfo_score = 0
+
+# SBC burden
+if pd.notna(sbc):
+    sbc_score = score_clip(
+        100 - sbc * 500
+    )
+else:
+    sbc_score = 0
+
+# Risk
+if pd.notna(risk):
+    risk_score = score_clip(
+        100 - risk
+    )
+else:
+    risk_score = 0
+
+return {
+    "ROIC Quality": roic_score,
+    "Accrual Quality": accrual_score,
+    "Cash Conversion": cfo_score,
+    "SBC Discipline": sbc_score,
+    "Risk Control": risk_score,
+}
+```
+
+# ==========================================================
+
+# Single Ticker Charts
+
+# ==========================================================
+
+def roic_chart(df):
+
+```
+tmp = df.copy()
+
+if "ROIC_TTM" not in tmp.columns:
+    return None
+
+tmp["ROIC_pct"] = tmp["ROIC_TTM"] * 100
+
+fig = px.line(
+    tmp,
+    x="date",
+    y="ROIC_pct",
+    title="ROIC Trend"
+)
+
+fig.update_layout(height=450)
+
+return fig
+```
+
+def accrual_chart(df):
+
+```
+tmp = df.copy()
+
+if "AccrualRatio" not in tmp.columns:
+    return None
+
+tmp["Accrual_pct"] = tmp["AccrualRatio"] * 100
+
+fig = px.line(
+    tmp,
+    x="date",
+    y="Accrual_pct",
+    title="Accrual Trend"
+)
+
+fig.update_layout(height=450)
+
+return fig
+```
+
+def risk_chart(df):
+
+```
+if "ForensicRiskScore" not in df.columns:
+    return None
+
+fig = px.bar(
+    df,
+    x="date",
+    y="ForensicRiskScore",
+    title="Forensic Risk Score"
+)
+
+fig.update_layout(height=450)
+
+return fig
+```
+
+# ==========================================================
+
+# Compare Bar Chart
+
+# ==========================================================
 
 def compare_bar(compare_df):
-    metrics = ["ROIC", "Accrual", "CFO/NI", "SBC/Revenue", "Risk"]
-    available = [m for m in metrics if m in compare_df.columns]
 
-    melted = compare_df.melt(
-        id_vars=["Ticker"],
-        value_vars=available,
-        var_name="Metric",
-        value_name="Value"
-    )
+```
+metrics = [
+    "ROIC",
+    "Accrual",
+    "CFO/NI",
+    "SBC/Revenue",
+    "Risk"
+]
 
-    fig = px.bar(
-        melted,
-        x="Metric",
-        y="Value",
-        color="Ticker",
-        barmode="group",
-        title="Cross-ticker comparison"
-    )
+melted = compare_df.melt(
+    id_vars=["Ticker"],
+    value_vars=[
+        m for m in metrics
+        if m in compare_df.columns
+    ],
+    var_name="Metric",
+    value_name="Value"
+)
 
-    return fig
+fig = px.bar(
+    melted,
+    x="Metric",
+    y="Value",
+    color="Ticker",
+    barmode="group",
+    title="Cross-Ticker Comparison"
+)
+
+fig.update_layout(height=550)
+
+return fig
+```
+
+# ==========================================================
+
+# Quality Radar
+
+# ==========================================================
 
 def compare_radar(compare_df):
-    categories = ["ROIC", "Accrual", "CFO/NI", "SBC/Revenue", "Risk"]
-    fig = go.Figure()
 
-    for _, row in compare_df.iterrows():
-        values = []
-        for c in categories:
-            v = row.get(c)
-            if pd.isna(v):
-                v = 0
-            if c == "Risk":
-                v = max(0, 1 - v / 100)
-            elif c in ["Accrual", "SBC/Revenue"]:
-                v = max(0, 1 - abs(v))
-            else:
-                v = max(0, min(float(v), 1))
-            values.append(v)
+```
+categories = [
+    "ROIC Quality",
+    "Accrual Quality",
+    "Cash Conversion",
+    "SBC Discipline",
+    "Risk Control"
+]
 
-        fig.add_trace(go.Scatterpolar(
+fig = go.Figure()
+
+for _, row in compare_df.iterrows():
+
+    scores = quality_scores(row)
+
+    values = [
+        scores[c]
+        for c in categories
+    ]
+
+    fig.add_trace(
+        go.Scatterpolar(
             r=values + [values[0]],
             theta=categories + [categories[0]],
             fill="toself",
-            name=row.get("Ticker", "NA")
-        ))
-
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-        showlegend=True,
-        title="Quality radar"
+            name=row["Ticker"]
+        )
     )
 
-    return fig
+fig.update_layout(
+    title="Quality Radar Score",
+    polar=dict(
+        radialaxis=dict(
+            visible=True,
+            range=[0, 100]
+        )
+    ),
+    showlegend=True,
+    height=700
+)
 
-def screen_scatter(screen_df):
-    return px.scatter(
-        screen_df,
-        x="Risk",
-        y="ROIC",
-        size="Quality",
-        color="Grade",
-        hover_name="Ticker",
-        title="Screened candidates: ROIC vs Risk"
+return fig
+```
+
+# ==========================================================
+
+# Screening Scatter
+
+# ==========================================================
+
+def screening_scatter(screen_df):
+
+```
+if screen_df.empty:
+    return None
+
+fig = px.scatter(
+    screen_df,
+    x="Risk",
+    y="ROIC",
+    color="Grade",
+    size="Quality",
+    hover_name="Ticker",
+    title="Screened Candidates: ROIC vs Risk"
+)
+
+fig.update_layout(height=650)
+
+return fig
+```
+
+# ==========================================================
+
+# Streamlit Helpers
+
+# ==========================================================
+
+def show_single_ticker_charts(df):
+
+```
+fig = roic_chart(df)
+if fig:
+    st.plotly_chart(
+        fig,
+        use_container_width=True
     )
+
+fig = accrual_chart(df)
+if fig:
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+fig = risk_chart(df)
+if fig:
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+```
+
+def show_compare_charts(compare_df):
+
+```
+st.plotly_chart(
+    compare_bar(compare_df),
+    use_container_width=True
+)
+
+st.plotly_chart(
+    compare_radar(compare_df),
+    use_container_width=True
+)
+```
+
+def show_screening_chart(screen_df):
+
+```
+fig = screening_scatter(screen_df)
+
+if fig:
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+```
