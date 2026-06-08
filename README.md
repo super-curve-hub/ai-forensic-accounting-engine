@@ -1,16 +1,5 @@
-# AI Forensic Accounting Engine
+# AI Forensic Accounting Engine v2.0
 
-SEC 10-K / 10-Q ベースの
-Forensic Accounting Dashboard
+Main file path: `app_v2.py`
 
-## Features
-
-- ROIC
-- Accrual Ratio
-- DSO
-- Inventory Days
-- Forensic Risk Score
-
-## Deploy
-
-Deploy on Streamlit Community Cloud.
+Features: Analysis, Watchlist, Compare, Screening.
