@@ -1,3 +1,11 @@
-# AI Forensic Accounting Engine v2.1
+# AI Forensic Accounting Engine v3
 
-Main file path: app.py
+Modular architecture:
+- app.py
+- ui.py
+- cards.py
+- charts.py
+- screener.py
+- engine.py
+- sec_loader.py
+- utils.py
