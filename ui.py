@@ -200,20 +200,9 @@ def render_compare(wacc):
                 f"### Comparing {len(ranked)} Companies"
             )
 
-            # =================================================
-            # Scatter
-            # =================================================
-
-            st.plotly_chart(
-                compare_scatter(
-                    ranked
-                ),
-                use_container_width=True
-            )
-
-            # =================================================
-            # Economic Ranking
-            # =================================================
+            # ==========================================
+            # 1. Economic Profit Ranking
+            # ==========================================
 
             st.plotly_chart(
                 economic_ranking_chart(
@@ -222,9 +211,20 @@ def render_compare(wacc):
                 use_container_width=True
             )
 
-            # =================================================
-            # Heatmap
-            # =================================================
+            # ==========================================
+            # 2. ROIC vs Risk
+            # ==========================================
+
+            st.plotly_chart(
+                compare_scatter(
+                    ranked
+                ),
+                use_container_width=True
+            )
+
+            # ==========================================
+            # 3. Regime Heatmap
+            # ==========================================
 
             st.plotly_chart(
                 regime_heatmap(
@@ -233,9 +233,9 @@ def render_compare(wacc):
                 use_container_width=True
             )
 
-            # =================================================
-            # Raw Data
-            # =================================================
+            # ==========================================
+            # 4. Raw Ranking Data
+            # ==========================================
 
             with st.expander(
                 "Ranking Data"
