@@ -1,62 +1,80 @@
 import pandas as pd
+import numpy as np
 
 from engine import run_forensic_engine
 
 
 DEFAULT_UNIVERSE = [
-     "COHR",   # Coherent
-    "LITE",   # Lumentum
-    "AAOI",   # Applied Optoelectronics
-
-    "NVDA",   # AI GPU
-    "AVGO",   # Broadcom
-    "ANET",   # Arista Networks
-    "MRVL",   # Marvell
-
-    "AMD",    # AI Accelerator
-    "MU",     # HBM
-    "TSM",    # Foundry
-
-    "CIEN",   # Optical Networking
-    "FN",     # Flex
-    "GLW",    # Corning
-
-    "AMZN",   # AWS
-    "MSFT",   # Azure
-    "META"    # AI Capex
+    "COHR",
+    "LITE",
+    "NVDA",
+    "AVGO",
+    "ANET",
+    "MRVL",
+    "AMD",
+    "MU",
+    "TSM",
+    "MSFT",
+    "AMZN",
+    "META"
 ]
 
 DEFAULT_WATCHLIST = [
     "COHR",
     "LITE",
-    "AAOI",
     "AVGO",
     "ANET",
     "MRVL",
     "NVDA"
 ]
 
+COMPARE_PRESETS = {
+    "Photonics": [
+        "COHR",
+        "LITE",
+        "AVGO",
+        "ANET",
+        "MRVL",
+        "NVDA"
+    ],
+    "AI Infrastructure": [
+        "NVDA",
+        "AVGO",
+        "AMD",
+        "MU",
+        "ANET",
+        "MRVL"
+    ],
+    "Magnificent 7": [
+        "AAPL",
+        "MSFT",
+        "AMZN",
+        "META",
+        "GOOG",
+        "NVDA",
+        "TSLA"
+    ],
+    "Semiconductors": [
+        "NVDA",
+        "AMD",
+        "AVGO",
+        "MU",
+        "TSM",
+        "MRVL"
+    ]
+}
+
 
 def latest_row_for_table(result):
-
     latest = result["latest"]
 
-    economic_ratio = None
+    nopat = latest.get("NOPAT_TTM")
+    economic = latest.get("EconomicEarnings_TTM")
 
-    try:
+    economic_ratio = np.nan
 
-        nopat = latest.get("NOPAT_TTM")
-        economic = latest.get("EconomicEarnings_TTM")
-
-        if (
-            nopat is not None
-            and economic is not None
-            and nopat != 0
-        ):
-            economic_ratio = economic / nopat
-
-    except Exception:
-        economic_ratio = None
+    if nopat is not None and economic is not None and nopat != 0:
+        economic_ratio = economic / nopat
 
     return {
         "Ticker": latest.get("Ticker"),
@@ -65,11 +83,15 @@ def latest_row_for_table(result):
         "Regime": latest.get("Regime"),
         "ROIC": latest.get("ROIC_TTM"),
         "ROIC-WACC": latest.get("ROIC_WACC_Spread"),
+        "EconomicEarnings": latest.get("EconomicEarnings_TTM"),
+        "EconomicRatio": economic_ratio,
         "Accrual": latest.get("AccrualRatio"),
         "CFO/NI": latest.get("CFO_to_NI"),
         "FCF/NI": latest.get("FCF_to_NI"),
-        "EconomicRatio": economic_ratio,
         "SBC/Revenue": latest.get("SBC_to_Revenue"),
+        "GrossMargin": latest.get("GrossMargin"),
+        "FCFMargin": latest.get("FCFMargin"),
+        "BuybackYield": latest.get("BuybackYieldProxy"),
         "DSO": latest.get("DSO"),
         "InventoryDays": latest.get("InventoryDays"),
         "Risk": latest.get("ForensicRiskScore"),
@@ -79,14 +101,11 @@ def latest_row_for_table(result):
 
 
 def run_ticker_list(tickers, wacc):
-
     rows = []
     errors = []
 
     for ticker in tickers:
-
         try:
-
             result = run_forensic_engine(
                 ticker,
                 wacc=wacc
@@ -97,7 +116,6 @@ def run_ticker_list(tickers, wacc):
             )
 
         except Exception as e:
-
             errors.append(
                 {
                     "Ticker": ticker,
@@ -105,10 +123,7 @@ def run_ticker_list(tickers, wacc):
                 }
             )
 
-    return (
-        pd.DataFrame(rows),
-        pd.DataFrame(errors)
-    )
+    return pd.DataFrame(rows), pd.DataFrame(errors)
 
 
 def apply_screen(
@@ -119,7 +134,6 @@ def apply_screen(
     require_cfo_gt_1=False,
     require_positive_spread=False
 ):
-
     if df.empty:
         return df
 
@@ -141,74 +155,32 @@ def apply_screen(
     ]
 
     if require_cfo_gt_1:
-
         screen = screen[
-            screen["CFO/NI"].fillna(-999)
-            > 1
+            screen["CFO/NI"].fillna(-999) > 1
         ]
 
     if require_positive_spread:
-
         screen = screen[
-            screen["ROIC-WACC"].fillna(-999)
-            > 0
+            screen["ROIC-WACC"].fillna(-999) > 0
         ]
 
     return screen
 
 
-def screen_quality_compounders(df):
-
-    return apply_screen(
-        df=df,
-        roic_min_pct=20,
-        risk_max=20,
-        accrual_max_pct=0,
-        require_cfo_gt_1=True,
-        require_positive_spread=True
-    )
-
-
-def screen_high_sbc(
-    df,
-    threshold=0.10
-):
-
-    if df.empty:
-        return df
-
-    return df[
-        df["SBC/Revenue"].fillna(0)
-        > threshold
-    ]
-
-
-def screen_value_destruction(df):
-
-    if df.empty:
-        return df
-
-    return df[
-        df["ROIC-WACC"].fillna(999)
-        < 0
-    ]
-
-
 def rank_companies(df):
-
     if df.empty:
         return df
 
     ranked = df.copy()
 
-    ranked["RankScore"] = (
-        ranked["Quality"].fillna(0)
-        + ranked["ROIC"].fillna(0) * 100
+    ranked["EconomicScore"] = (
+        ranked["ROIC-WACC"].fillna(0) * 100
+        + ranked["Quality"].fillna(0)
         - ranked["Risk"].fillna(0)
     )
 
     ranked = ranked.sort_values(
-        "RankScore",
+        "EconomicScore",
         ascending=False
     )
 
