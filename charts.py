@@ -12,24 +12,62 @@ def score_clip(x, low=0, high=100):
 
 
 def institutional_scores(row):
+
     roic = row.get("ROIC", np.nan)
-    fcf_margin = row.get("FCFMargin", np.nan)
     gross_margin = row.get("GrossMargin", np.nan)
-    cfo_ni = row.get("CFO/NI", np.nan)
+    fcf_margin = row.get("FCFMargin", np.nan)
+    cfo = row.get("CFO/NI", np.nan)
     sbc = row.get("SBC/Revenue", np.nan)
     buyback = row.get("BuybackYield", np.nan)
     risk = row.get("Risk", np.nan)
 
     return {
-        "ROIC": score_clip(roic * 120) if pd.notna(roic) else 0,
-        "FCF Margin": score_clip(fcf_margin * 300) if pd.notna(fcf_margin) else 0,
-        "Gross Margin": score_clip(gross_margin * 100) if pd.notna(gross_margin) else 0,
-        "Cash Conversion": score_clip(cfo_ni * 50) if pd.notna(cfo_ni) else 0,
-        "SBC Discipline": score_clip(100 - sbc * 500) if pd.notna(sbc) else 0,
-        "Buyback Yield": score_clip(buyback * 2000) if pd.notna(buyback) else 0,
-        "Risk Control": score_clip(100 - risk) if pd.notna(risk) else 0,
-    }
 
+        "ROIC":
+            score_clip(
+                (roic if pd.notna(roic) else 0) * 120
+            ),
+
+        "Gross Margin":
+            score_clip(
+                (gross_margin if pd.notna(gross_margin) else 0) * 120
+            ),
+
+        "FCF Margin":
+            score_clip(
+                (fcf_margin if pd.notna(fcf_margin) else 0) * 250
+            ),
+
+        "Cash Conversion":
+            score_clip(
+                (cfo if pd.notna(cfo) else 0) * 50
+            ),
+
+        "SBC Discipline":
+            score_clip(
+                100 -
+                (
+                    (sbc if pd.notna(sbc) else 0)
+                    * 800
+                )
+            ),
+
+        "Buyback Yield":
+            score_clip(
+                (buyback if pd.notna(buyback) else 0)
+                * 500
+            ),
+
+        "Risk Control":
+            score_clip(
+                100 -
+                (
+                    (risk if pd.notna(risk) else 100)
+                    * 1.2
+                )
+            )
+    }
+    
 
 def render_trend_charts(result):
     df = result["df"].copy()
