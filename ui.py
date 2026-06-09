@@ -129,6 +129,7 @@ def render_analysis(
             )
 
             st.exception(e)
+
 def render_watchlist(wacc):
     st.subheader("Watchlist")
 
