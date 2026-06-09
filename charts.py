@@ -80,35 +80,6 @@ def render_trend_charts(result):
         )
 
 
-# =====================================================
-# Economic Profit Ranking
-# =====================================================
-
-def economic_ranking_chart(df):
-
-    if (
-        df.empty
-        or
-        "EconomicScore" not in df.columns
-    ):
-        return px.bar()
-
-    fig = px.bar(
-        df,
-        x="Ticker",
-        y="EconomicScore",
-        color="Grade",
-        title="Economic Profit Ranking"
-    )
-
-    fig.update_layout(
-        height=550,
-        xaxis_title="Ticker",
-        yaxis_title="Economic Score"
-    )
-
-    return fig
-
 
 # =====================================================
 # Compare Scatter
