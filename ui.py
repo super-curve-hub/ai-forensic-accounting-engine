@@ -12,7 +12,6 @@ from cards import (
 from charts import (
     render_trend_charts,
     compare_scatter,
-    compare_radar_v2,
     screen_scatter,
     portfolio_scatter,
     portfolio_weights_chart,
@@ -167,6 +166,7 @@ def render_watchlist(wacc):
 
 
 def render_compare(wacc):
+
     st.subheader("Compare")
 
     preset = st.selectbox(
@@ -184,51 +184,78 @@ def render_compare(wacc):
         "Run Compare",
         key="compare_button"
     ):
+
         compare_df, errors = run_ticker_list(
             tickers,
             wacc
         )
 
         if not compare_df.empty:
-            ranked = rank_companies(compare_df)
+
+            ranked = rank_companies(
+                compare_df
+            )
 
             st.markdown(
                 f"### Comparing {len(ranked)} Companies"
             )
 
+            # =================================================
+            # Scatter
+            # =================================================
+
             st.plotly_chart(
-                compare_scatter(ranked),
+                compare_scatter(
+                    ranked
+                ),
                 use_container_width=True
             )
 
+            # =================================================
+            # Economic Ranking
+            # =================================================
+
             st.plotly_chart(
-                compare_radar_v2(ranked),
+                economic_ranking_chart(
+                    ranked
+                ),
                 use_container_width=True
             )
 
+            # =================================================
+            # Heatmap
+            # =================================================
+
             st.plotly_chart(
-                economic_ranking_chart(ranked),
+                regime_heatmap(
+                    ranked
+                ),
                 use_container_width=True
             )
 
-            st.plotly_chart(
-                regime_heatmap(ranked),
-                use_container_width=True
-            )
+            # =================================================
+            # Raw Data
+            # =================================================
 
-            with st.expander("Ranking Data"):
+            with st.expander(
+                "Ranking Data"
+            ):
+
                 st.dataframe(
                     ranked,
                     use_container_width=True
                 )
 
         if not errors.empty:
-            with st.expander("Errors"):
+
+            with st.expander(
+                "Errors"
+            ):
+
                 st.dataframe(
                     errors,
                     use_container_width=True
                 )
-
 
 def render_screening(wacc):
     st.subheader("Screening")
