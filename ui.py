@@ -63,27 +63,42 @@ def render_developer_view(result):
         )
 
 
-def render_analysis(wacc, wacc_pct):
+def render_analysis(
+    wacc,
+    wacc_pct
+):
+
     st.subheader("Analysis")
 
-    c1, c2 = st.columns([3, 1])
+    c1, c2 = st.columns(
+        [4, 1],
+        vertical_alignment="bottom"
+    )
 
     with c1:
-        ticker = st.text_input(
-            "Ticker",
-            "COHR",
+
+        ticker = st.selectbox(
+            "Company",
+            DEFAULT_UNIVERSE,
+            index=0,
             key="analysis_ticker"
-        ).upper().strip()
+        )
 
     with c2:
+
         run = st.button(
             "Analyze",
             use_container_width=True
         )
 
     if run:
+
         try:
-            with st.spinner(f"Analyzing {ticker}..."):
+
+            with st.spinner(
+                f"Analyzing {ticker}..."
+            ):
+
                 result = run_forensic_engine(
                     ticker,
                     wacc=wacc
@@ -96,15 +111,25 @@ def render_analysis(wacc, wacc_pct):
                 wacc_pct
             )
 
-            metric_cards(latest)
-            render_trend_charts(result)
-            render_developer_view(result)
+            metric_cards(
+                latest
+            )
+
+            render_trend_charts(
+                result
+            )
+
+            render_developer_view(
+                result
+            )
 
         except Exception as e:
-            st.error("Analysis failed.")
+
+            st.error(
+                "Analysis failed."
+            )
+
             st.exception(e)
-
-
 def render_watchlist(wacc):
     st.subheader("Watchlist")
 
