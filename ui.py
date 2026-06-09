@@ -16,7 +16,6 @@ from charts import (
     portfolio_scatter,
     portfolio_weights_chart,
     optimized_weights_chart,
-    regime_heatmap,
     economic_ranking_chart
 )
 
@@ -32,6 +31,7 @@ from screener import (
 
 
 def render_developer_view(result):
+
     df = result["df"]
 
     cols = [
@@ -62,10 +62,7 @@ def render_developer_view(result):
         )
 
 
-def render_analysis(
-    wacc,
-    wacc_pct
-):
+def render_analysis(wacc, wacc_pct):
 
     st.subheader("Analysis")
 
@@ -75,7 +72,6 @@ def render_analysis(
     )
 
     with c1:
-
         ticker = st.selectbox(
             "Company",
             DEFAULT_UNIVERSE,
@@ -84,20 +80,14 @@ def render_analysis(
         )
 
     with c2:
-
         run = st.button(
             "Analyze",
             use_container_width=True
         )
 
     if run:
-
         try:
-
-            with st.spinner(
-                f"Analyzing {ticker}..."
-            ):
-
+            with st.spinner(f"Analyzing {ticker}..."):
                 result = run_forensic_engine(
                     ticker,
                     wacc=wacc
@@ -110,27 +100,19 @@ def render_analysis(
                 wacc_pct
             )
 
-            metric_cards(
-                latest
-            )
+            metric_cards(latest)
 
-            render_trend_charts(
-                result
-            )
+            render_trend_charts(result)
 
-            render_developer_view(
-                result
-            )
+            render_developer_view(result)
 
         except Exception as e:
-
-            st.error(
-                "Analysis failed."
-            )
-
+            st.error("Analysis failed.")
             st.exception(e)
 
+
 def render_watchlist(wacc):
+
     st.subheader("Watchlist")
 
     selected = st.multiselect(
@@ -143,6 +125,7 @@ def render_watchlist(wacc):
         "Run Watchlist",
         key="watchlist_button"
     ):
+
         watch_df, errors = run_ticker_list(
             selected,
             wacc
@@ -193,72 +176,38 @@ def render_compare(wacc):
 
         if not compare_df.empty:
 
-            ranked = rank_companies(
-                compare_df
-            )
+            ranked = rank_companies(compare_df)
 
             st.markdown(
                 f"### Comparing {len(ranked)} Companies"
             )
 
-            # ==========================================
-            # 1. Economic Profit Ranking
-            # ==========================================
-
             st.plotly_chart(
-                economic_ranking_chart(
-                    ranked
-                ),
+                economic_ranking_chart(ranked),
                 use_container_width=True
             )
 
-            # ==========================================
-            # 2. ROIC vs Risk
-            # ==========================================
-
             st.plotly_chart(
-                compare_scatter(
-                    ranked
-                ),
+                compare_scatter(ranked),
                 use_container_width=True
             )
 
-            # ==========================================
-            # 3. Regime Heatmap
-            # ==========================================
-
-            st.plotly_chart(
-                regime_heatmap(
-                    ranked
-                ),
-                use_container_width=True
-            )
-
-            # ==========================================
-            # 4. Raw Ranking Data
-            # ==========================================
-
-            with st.expander(
-                "Ranking Data"
-            ):
-
+            with st.expander("Ranking Data"):
                 st.dataframe(
                     ranked,
                     use_container_width=True
                 )
 
         if not errors.empty:
-
-            with st.expander(
-                "Errors"
-            ):
-
+            with st.expander("Errors"):
                 st.dataframe(
                     errors,
                     use_container_width=True
                 )
 
+
 def render_screening(wacc):
+
     st.subheader("Screening")
 
     preset = st.selectbox(
@@ -315,6 +264,7 @@ def render_screening(wacc):
         "Run Screen",
         key="screen_button"
     ):
+
         raw_df, errors = run_ticker_list(
             universe,
             wacc
@@ -344,6 +294,12 @@ def render_screening(wacc):
                 use_container_width=True
             )
 
+            with st.expander("Screening Data"):
+                st.dataframe(
+                    ranked,
+                    use_container_width=True
+                )
+
         if not errors.empty:
             with st.expander("Errors"):
                 st.dataframe(
@@ -353,6 +309,7 @@ def render_screening(wacc):
 
 
 def render_portfolio(wacc):
+
     st.subheader("Portfolio")
 
     portfolio_input = st.text_area(
@@ -381,10 +338,12 @@ NVDA,20""",
         "Analyze Portfolio",
         key="portfolio_button"
     ):
+
         rows = []
         errors = []
 
         for line in portfolio_input.splitlines():
+
             try:
                 ticker, weight = line.split(",")
 
@@ -394,6 +353,7 @@ NVDA,20""",
                 )
 
                 row = latest_row_for_table(result)
+
                 row["Weight"] = float(weight)
 
                 rows.append(row)
@@ -417,7 +377,7 @@ NVDA,20""",
 
         elif optimizer == "Quality Weight":
             q = df["Quality"].fillna(0).clip(lower=0)
-            df["OptWeight"] = q / q.sum()
+            df["OptWeight"] = q / q.sum() if q.sum() != 0 else 1 / len(df)
 
         elif optimizer == "Risk Parity":
             inv_risk = 1 / df["Risk"].fillna(100).clip(lower=1)
@@ -425,7 +385,7 @@ NVDA,20""",
 
         elif optimizer == "Max ROIC":
             roic = df["ROIC"].fillna(0).clip(lower=0)
-            df["OptWeight"] = roic / roic.sum()
+            df["OptWeight"] = roic / roic.sum() if roic.sum() != 0 else 1 / len(df)
 
         else:
             df["OptWeight"] = df["Weight"] / df["Weight"].sum()
@@ -433,19 +393,23 @@ NVDA,20""",
         weights = df["OptWeight"]
 
         portfolio_roic = (
-            df["ROIC"].fillna(0) * weights
+            df["ROIC"].fillna(0)
+            * weights
         ).sum()
 
         portfolio_spread = (
-            df["ROIC-WACC"].fillna(0) * weights
+            df["ROIC-WACC"].fillna(0)
+            * weights
         ).sum()
 
         portfolio_risk = (
-            df["Risk"].fillna(0) * weights
+            df["Risk"].fillna(0)
+            * weights
         ).sum()
 
         portfolio_quality = (
-            df["Quality"].fillna(0) * weights
+            df["Quality"].fillna(0)
+            * weights
         ).sum()
 
         c1, c2, c3, c4 = st.columns(4)
@@ -484,6 +448,12 @@ NVDA,20""",
             optimized_weights_chart(df),
             use_container_width=True
         )
+
+        with st.expander("Portfolio Data"):
+            st.dataframe(
+                df,
+                use_container_width=True
+            )
 
         for _, row in df.iterrows():
             stock_card(row)
