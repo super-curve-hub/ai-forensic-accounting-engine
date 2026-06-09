@@ -1,134 +1,8 @@
 import pandas as pd
-import numpy as np
 
 import plotly.express as px
-import plotly.graph_objects as go
 
 import streamlit as st
-
-
-# =====================================================
-# Utility
-# =====================================================
-
-def score_clip(x, low=0, high=100):
-
-    if pd.isna(x):
-        return 0
-
-    return max(
-        low,
-        min(
-            high,
-            float(x)
-        )
-    )
-
-
-def percentile_rank(
-    df,
-    col,
-    higher_is_better=True
-):
-
-    if col not in df.columns:
-        return pd.Series(
-            0,
-            index=df.index
-        )
-
-    s = pd.to_numeric(
-        df[col],
-        errors="coerce"
-    )
-
-    if s.notna().sum() == 0:
-        return pd.Series(
-            0,
-            index=df.index
-        )
-
-    ranks = s.rank(
-        pct=True,
-        ascending=higher_is_better
-    )
-
-    if not higher_is_better:
-        ranks = 1 - ranks
-
-    return (
-        ranks
-        .fillna(0)
-        * 100
-    )
-
-
-# =====================================================
-# Institutional Percentile Radar
-# =====================================================
-
-def radar_score_frame(compare_df):
-
-    if compare_df.empty:
-        return pd.DataFrame()
-
-    scores = pd.DataFrame(
-        index=compare_df.index
-    )
-
-    scores["ROIC"] = percentile_rank(
-        compare_df,
-        "ROIC",
-        higher_is_better=True
-    )
-
-    scores["Gross Margin"] = percentile_rank(
-        compare_df,
-        "GrossMargin",
-        higher_is_better=True
-    )
-
-    scores["FCF Margin"] = percentile_rank(
-        compare_df,
-        "FCFMargin",
-        higher_is_better=True
-    )
-
-    scores["Cash Conversion"] = percentile_rank(
-        compare_df,
-        "CFO/NI",
-        higher_is_better=True
-    )
-
-    scores["SBC Discipline"] = percentile_rank(
-        compare_df,
-        "SBC/Revenue",
-        higher_is_better=False
-    )
-
-    temp = compare_df.copy()
-
-    temp["CapitalAllocationRaw"] = (
-        temp["ROIC-WACC"].fillna(0)
-        +
-        temp["BuybackYield"].fillna(0)
-        -
-        temp["SBC/Revenue"].fillna(0)
-    )
-
-    scores["Capital Allocation"] = percentile_rank(
-        temp,
-        "CapitalAllocationRaw",
-        higher_is_better=True
-    )
-
-    scores["Risk Control"] = percentile_rank(
-        compare_df,
-        "Risk",
-        higher_is_better=False
-    )
-
-    return scores
 
 
 # =====================================================
@@ -209,7 +83,37 @@ def render_trend_charts(result):
 
 
 # =====================================================
-# Compare Scatter
+# Economic Profit Ranking
+# =====================================================
+
+def economic_ranking_chart(df):
+
+    if (
+        df.empty
+        or
+        "EconomicScore" not in df.columns
+    ):
+        return px.bar()
+
+    fig = px.bar(
+        df,
+        x="Ticker",
+        y="EconomicScore",
+        color="Grade",
+        title="Economic Profit Ranking"
+    )
+
+    fig.update_layout(
+        height=550,
+        xaxis_title="Ticker",
+        yaxis_title="EconomicScore"
+    )
+
+    return fig
+
+
+# =====================================================
+# ROIC vs Risk Scatter
 # =====================================================
 
 def compare_scatter(compare_df):
@@ -248,92 +152,6 @@ def compare_scatter(compare_df):
 
 
 # =====================================================
-# Institutional Quality Radar
-# =====================================================
-
-def compare_radar_v2(compare_df):
-
-    if compare_df.empty:
-        return go.Figure()
-
-    categories = [
-        "ROIC",
-        "Gross Margin",
-        "FCF Margin",
-        "Cash Conversion",
-        "SBC Discipline",
-        "Capital Allocation",
-        "Risk Control"
-    ]
-
-    scores = radar_score_frame(
-        compare_df
-    )
-
-    fig = go.Figure()
-
-    for idx, row in compare_df.iterrows():
-
-        values = [
-            scores.loc[idx, c]
-            for c in categories
-        ]
-
-        fig.add_trace(
-            go.Scatterpolar(
-                r=values + [values[0]],
-                theta=categories + [categories[0]],
-                fill="toself",
-                name=row["Ticker"]
-            )
-        )
-
-    fig.update_layout(
-        title="Institutional Quality Radar",
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100]
-            )
-        ),
-        showlegend=True,
-        height=850
-    )
-
-    return fig
-
-
-# =====================================================
-# Economic Ranking
-# =====================================================
-
-def economic_ranking_chart(df):
-
-    if (
-        df.empty
-        or
-        "EconomicScore" not in df.columns
-    ):
-        return px.bar()
-
-    fig = px.bar(
-        df,
-        x="Ticker",
-        y="EconomicScore",
-        color="Grade",
-        title="Economic Profit Ranking"
-    )
-
-    fig.update_layout(
-        height=550,
-        xaxis_title="Ticker",
-        yaxis_title="EconomicScore"
-    )
-
-    return fig
-
-
-# =====================================================
 # Regime Heatmap
 # =====================================================
 
@@ -348,19 +166,34 @@ def regime_heatmap(df):
     heat = df.copy()
 
     if "ROIC" in heat.columns:
-        heat["ROIC"] = heat["ROIC"] * 100
+        heat["ROIC"] = (
+            heat["ROIC"]
+            * 100
+        )
 
     if "ROIC-WACC" in heat.columns:
-        heat["ROIC-WACC"] = heat["ROIC-WACC"] * 100
+        heat["ROIC-WACC"] = (
+            heat["ROIC-WACC"]
+            * 100
+        )
 
     if "Accrual" in heat.columns:
-        heat["Accrual"] = heat["Accrual"] * 100
+        heat["Accrual"] = (
+            heat["Accrual"]
+            * 100
+        )
 
     if "CFO/NI" in heat.columns:
-        heat["CFO/NI"] = heat["CFO/NI"] * 50
+        heat["CFO/NI"] = (
+            heat["CFO/NI"]
+            * 50
+        )
 
     if "SBC/Revenue" in heat.columns:
-        heat["SBC/Revenue"] = heat["SBC/Revenue"] * 100
+        heat["SBC/Revenue"] = (
+            heat["SBC/Revenue"]
+            * 100
+        )
 
     cols = [
         "ROIC",
@@ -438,7 +271,7 @@ def screen_scatter(screen_df):
 
 
 # =====================================================
-# Portfolio Charts
+# Portfolio Optimizer Charts
 # =====================================================
 
 def portfolio_scatter(df):
@@ -481,12 +314,18 @@ def portfolio_weights_chart(df):
     if df.empty:
         return px.pie()
 
-    return px.pie(
+    fig = px.pie(
         df,
         names="Ticker",
         values="Weight",
         title="Portfolio Allocation"
     )
+
+    fig.update_layout(
+        height=600
+    )
+
+    return fig
 
 
 def optimized_weights_chart(df):
@@ -498,9 +337,15 @@ def optimized_weights_chart(df):
     ):
         return px.pie()
 
-    return px.pie(
+    fig = px.pie(
         df,
         names="Ticker",
         values="OptWeight",
         title="Optimized Portfolio"
     )
+
+    fig.update_layout(
+        height=600
+    )
+
+    return fig
