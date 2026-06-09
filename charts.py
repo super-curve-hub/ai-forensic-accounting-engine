@@ -136,24 +136,19 @@ def compare_scatter(compare_df):
     fig = px.scatter(
         plot_df,
         x="Risk",
-        y="ROIC",
+        y="EconomicScore",
         size="BubbleSize",
-        size_max=45,
+        size_max=50,
         color="EconomicScore",
         color_continuous_scale="RdYlGn",
         hover_name="Ticker",
-        text="Ticker",
-        title="ROIC vs Forensic Risk"
-    )
-
-    fig.update_traces(
-        textposition="top right"
+        title="Economic Profit vs Risk"
     )
 
     fig.update_layout(
-        height=700,
+        height=750,
         xaxis_title="Forensic Risk",
-        yaxis_title="ROIC",
+        yaxis_title="Economic Score",
         coloraxis_colorbar_title="Economic Score",
         showlegend=False
     )
@@ -163,12 +158,10 @@ def compare_scatter(compare_df):
     )
 
     fig.update_yaxes(
-        zeroline=True,
-        tickformat=".0%"
+        zeroline=True
     )
 
     return fig
-
 
 # =====================================================
 # Screening Scatter
