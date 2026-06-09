@@ -1,15 +1,33 @@
 import pandas as pd
 import numpy as np
+
 import plotly.express as px
 import plotly.graph_objects as go
+
 import streamlit as st
 
 
+# =====================================================
+# Utility
+# =====================================================
+
 def score_clip(x, low=0, high=100):
+
     if pd.isna(x):
         return 0
-    return max(low, min(high, float(x)))
 
+    return max(
+        low,
+        min(
+            high,
+            float(x)
+        )
+    )
+
+
+# =====================================================
+# Institutional Radar
+# =====================================================
 
 def institutional_scores(row):
 
@@ -17,64 +35,89 @@ def institutional_scores(row):
     gross_margin = row.get("GrossMargin", np.nan)
     fcf_margin = row.get("FCFMargin", np.nan)
     cfo = row.get("CFO/NI", np.nan)
+
     sbc = row.get("SBC/Revenue", np.nan)
     buyback = row.get("BuybackYield", np.nan)
+
+    spread = row.get("ROIC-WACC", np.nan)
+
     risk = row.get("Risk", np.nan)
+
+    roic_v = 0 if pd.isna(roic) else roic
+    gross_v = 0 if pd.isna(gross_margin) else gross_margin
+    fcf_v = 0 if pd.isna(fcf_margin) else fcf_margin
+
+    cfo_v = 0 if pd.isna(cfo) else cfo
+
+    sbc_v = 0 if pd.isna(sbc) else sbc
+    buyback_v = 0 if pd.isna(buyback) else buyback
+    spread_v = 0 if pd.isna(spread) else spread
+
+    risk_v = 100 if pd.isna(risk) else risk
+
+    capital_score = (
+        spread_v * 120
+        +
+        buyback_v * 600
+        -
+        sbc_v * 600
+    )
 
     return {
 
         "ROIC":
             score_clip(
-                (roic if pd.notna(roic) else 0) * 120
+                roic_v * 80
             ),
 
         "Gross Margin":
             score_clip(
-                (gross_margin if pd.notna(gross_margin) else 0) * 120
+                gross_v * 140
             ),
 
         "FCF Margin":
             score_clip(
-                (fcf_margin if pd.notna(fcf_margin) else 0) * 250
+                fcf_v * 180
             ),
 
         "Cash Conversion":
             score_clip(
-                (cfo if pd.notna(cfo) else 0) * 50
+                cfo_v * 60
             ),
 
         "SBC Discipline":
             score_clip(
-                100 -
-                (
-                    (sbc if pd.notna(sbc) else 0)
-                    * 800
-                )
+                100 - sbc_v * 1000
             ),
 
-        "Buyback Yield":
+        "Capital Allocation":
             score_clip(
-                (buyback if pd.notna(buyback) else 0)
-                * 500
+                50 + capital_score
             ),
 
         "Risk Control":
             score_clip(
-                100 -
-                (
-                    (risk if pd.notna(risk) else 100)
-                    * 1.2
-                )
+                100 - risk_v * 1.5
             )
     }
-    
+
+
+# =====================================================
+# Analysis
+# =====================================================
 
 def render_trend_charts(result):
+
     df = result["df"].copy()
 
     if "ROIC_TTM" in df.columns:
+
         tmp = df.copy()
-        tmp["ROIC_pct"] = tmp["ROIC_TTM"] * 100
+
+        tmp["ROIC_pct"] = (
+            tmp["ROIC_TTM"]
+            * 100
+        )
 
         st.plotly_chart(
             px.line(
@@ -87,8 +130,13 @@ def render_trend_charts(result):
         )
 
     if "AccrualRatio" in df.columns:
+
         tmp = df.copy()
-        tmp["Accrual_pct"] = tmp["AccrualRatio"] * 100
+
+        tmp["Accrual_pct"] = (
+            tmp["AccrualRatio"]
+            * 100
+        )
 
         st.plotly_chart(
             px.line(
@@ -101,6 +149,7 @@ def render_trend_charts(result):
         )
 
     if "ForensicRiskScore" in df.columns:
+
         st.plotly_chart(
             px.bar(
                 df,
@@ -112,7 +161,12 @@ def render_trend_charts(result):
         )
 
 
+# =====================================================
+# Compare
+# =====================================================
+
 def compare_scatter(compare_df):
+
     if compare_df.empty:
         return px.scatter()
 
@@ -122,174 +176,304 @@ def compare_scatter(compare_df):
         y="ROIC",
         size="Quality",
         color="Grade",
-        hover_name="Ticker",
         text="Ticker",
+        hover_name="Ticker",
         title="ROIC vs Forensic Risk"
     )
 
-    fig.update_traces(textposition="top center")
+    fig.update_traces(
+        textposition="top center"
+    )
 
     fig.update_layout(
-        height=650,
-        xaxis_title="Forensic Risk",
-        yaxis_title="ROIC"
+        height=650
     )
 
     return fig
 
 
 def compare_radar_v2(compare_df):
+
     if compare_df.empty:
         return go.Figure()
 
     categories = [
+
         "ROIC",
-        "FCF Margin",
+
         "Gross Margin",
+
+        "FCF Margin",
+
         "Cash Conversion",
+
         "SBC Discipline",
-        "Buyback Yield",
+
+        "Capital Allocation",
+
         "Risk Control"
     ]
 
     fig = go.Figure()
 
     for _, row in compare_df.iterrows():
-        scores = institutional_scores(row)
-        values = [scores[c] for c in categories]
+
+        scores = institutional_scores(
+            row
+        )
+
+        values = [
+            scores[c]
+            for c in categories
+        ]
 
         fig.add_trace(
+
             go.Scatterpolar(
+
                 r=values + [values[0]],
+
                 theta=categories + [categories[0]],
+
                 fill="toself",
+
                 name=row["Ticker"]
+
             )
         )
 
     fig.update_layout(
+
         title="Institutional Quality Radar",
+
         polar=dict(
+
             radialaxis=dict(
+
                 visible=True,
+
                 range=[0, 100]
+
             )
+
         ),
+
         showlegend=True,
+
         height=850
+
     )
 
     return fig
 
 
-def regime_heatmap(df):
-    if df.empty:
-        return px.imshow([[0]], title="Regime Heatmap")
-
-    cols = [
-        "ROIC",
-        "ROIC-WACC",
-        "Accrual",
-        "CFO/NI",
-        "SBC/Revenue",
-        "Risk",
-        "Quality"
-    ]
-
-    available = [c for c in cols if c in df.columns]
-
-    matrix = df[
-        ["Ticker"] + available
-    ].set_index("Ticker")
-
-    fig = px.imshow(
-        matrix,
-        aspect="auto",
-        title="Regime Heatmap",
-        text_auto=".2f"
-    )
-
-    fig.update_layout(height=650)
-
-    return fig
-
+# =====================================================
+# Economic Ranking
+# =====================================================
 
 def economic_ranking_chart(df):
-    if df.empty or "EconomicScore" not in df.columns:
+
+    if (
+        df.empty
+        or
+        "EconomicScore" not in df.columns
+    ):
         return px.bar()
 
     fig = px.bar(
+
         df,
+
         x="Ticker",
+
         y="EconomicScore",
+
         color="Grade",
+
         title="Economic Profit Ranking"
+
     )
 
-    fig.update_layout(height=550)
+    fig.update_layout(
+        height=550
+    )
 
     return fig
 
 
+# =====================================================
+# Heatmap
+# =====================================================
+
+def regime_heatmap(df):
+
+    if df.empty:
+
+        return px.imshow(
+            [[0]],
+            title="Regime Heatmap"
+        )
+
+    cols = [
+
+        "ROIC",
+
+        "ROIC-WACC",
+
+        "Accrual",
+
+        "CFO/NI",
+
+        "SBC/Revenue",
+
+        "Risk",
+
+        "Quality"
+
+    ]
+
+    available = [
+
+        c
+
+        for c in cols
+
+        if c in df.columns
+
+    ]
+
+    matrix = df[
+        ["Ticker"] + available
+    ].set_index(
+        "Ticker"
+    )
+
+    fig = px.imshow(
+
+        matrix,
+
+        aspect="auto",
+
+        text_auto=".2f",
+
+        title="Regime Heatmap"
+
+    )
+
+    fig.update_layout(
+        height=650
+    )
+
+    return fig
+
+
+# =====================================================
+# Screening
+# =====================================================
+
 def screen_scatter(screen_df):
+
     if screen_df.empty:
         return px.scatter()
 
     fig = px.scatter(
+
         screen_df,
+
         x="Risk",
+
         y="ROIC",
-        color="Regime",
+
         size="Quality",
-        hover_name="Ticker",
+
+        color="Regime",
+
         text="Ticker",
+
+        hover_name="Ticker",
+
         title="Screened Candidates"
+
     )
 
-    fig.update_traces(textposition="top center")
+    fig.update_traces(
+        textposition="top center"
+    )
 
     return fig
 
 
+# =====================================================
+# Portfolio
+# =====================================================
+
 def portfolio_scatter(df):
+
     if df.empty:
         return px.scatter()
 
     fig = px.scatter(
+
         df,
+
         x="ROIC-WACC",
+
         y="ROIC",
+
         size="Weight",
+
         color="Grade",
+
         text="Ticker",
+
         hover_name="Ticker",
+
         title="Portfolio ROIC vs Economic Spread"
+
     )
 
-    fig.update_traces(textposition="top center")
+    fig.update_traces(
+        textposition="top center"
+    )
 
     return fig
 
 
 def portfolio_weights_chart(df):
+
     if df.empty:
         return px.pie()
 
     return px.pie(
+
         df,
+
         names="Ticker",
+
         values="Weight",
+
         title="Portfolio Allocation"
+
     )
 
 
 def optimized_weights_chart(df):
-    if df.empty or "OptWeight" not in df.columns:
+
+    if (
+        df.empty
+        or
+        "OptWeight" not in df.columns
+    ):
         return px.pie()
 
     return px.pie(
+
         df,
+
         names="Ticker",
+
         values="OptWeight",
+
         title="Optimized Portfolio"
+
     )
