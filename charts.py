@@ -149,6 +149,7 @@ def compare_scatter(compare_df):
     )
 
     return fig
+    
 # =====================================================
 # Screening Scatter
 # =====================================================
@@ -163,13 +164,19 @@ def screen_scatter(screen_df):
     if "EconomicScore" in plot_df.columns:
 
         plot_df["BubbleSize"] = (
-            plot_df["EconomicScore"] ** 0.5
+            plot_df["EconomicScore"]
+            .fillna(1)
+            .clip(lower=1)
+            ** 0.5
         )
 
     else:
 
         plot_df["BubbleSize"] = (
-            plot_df["Quality"] ** 0.5
+            plot_df["Quality"]
+            .fillna(1)
+            .clip(lower=1)
+            ** 0.5
         )
 
     fig = px.scatter(
@@ -194,15 +201,17 @@ def screen_scatter(screen_df):
     )
 
     fig.update_xaxes(
-        zeroline=True
+        zeroline=True,
+        zerolinewidth=1
     )
 
     fig.update_yaxes(
-        zeroline=True
+        zeroline=True,
+        zerolinewidth=1
     )
 
     return fig
-
+    
 # =====================================================
 # Portfolio Charts
 # =====================================================
