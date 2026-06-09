@@ -177,10 +177,51 @@ def render_compare(wacc):
 
     st.subheader("Compare")
 
-    compare_input = st.text_input(
-        "Tickers separated by comma",
-        "NVDA, AVGO, AMD",
-        key="compare_input"
+    preset = st.selectbox(
+        "Compare Preset",
+        [
+            "Photonics",
+            "AI Infrastructure",
+            "Magnificent 7"
+        ]
+    )
+
+    if preset == "Photonics":
+
+        default_compare = [
+            "COHR",
+            "LITE",
+            "AVGO",
+            "ANET",
+            "MRVL",
+            "NVDA"
+        ]
+
+    elif preset == "AI Infrastructure":
+
+        default_compare = [
+            "NVDA",
+            "AVGO",
+            "AMD",
+            "MU",
+            "ANET",
+            "MRVL"
+        ]
+
+    else:
+
+        default_compare = [
+            "AAPL",
+            "MSFT",
+            "AMZN",
+            "META",
+            "GOOG",
+            "NVDA",
+            "TSLA"
+        ]
+
+    st.caption(
+        ", ".join(default_compare)
     )
 
     if st.button(
@@ -188,14 +229,8 @@ def render_compare(wacc):
         key="compare_button"
     ):
 
-        tickers = [
-            x.strip().upper()
-            for x in compare_input.split(",")
-            if x.strip()
-        ]
-
         compare_df, errors = run_ticker_list(
-            tickers,
+            default_compare,
             wacc
         )
 
@@ -204,10 +239,6 @@ def render_compare(wacc):
             st.markdown(
                 f"### Comparing {len(compare_df)} Companies"
             )
-
-            for _, row in compare_df.iterrows():
-
-                stock_card(row)
 
             st.plotly_chart(
                 compare_scatter(compare_df),
@@ -219,6 +250,11 @@ def render_compare(wacc):
                 use_container_width=True
             )
 
+            st.dataframe(
+                compare_df,
+                use_container_width=True
+            )
+
         if not errors.empty:
 
             with st.expander("Errors"):
@@ -227,8 +263,6 @@ def render_compare(wacc):
                     errors,
                     use_container_width=True
                 )
-
-
 def render_screening(wacc):
 
     st.subheader("Screening")
