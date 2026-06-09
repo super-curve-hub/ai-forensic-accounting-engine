@@ -160,34 +160,33 @@ def screen_scatter(screen_df):
     fig = px.scatter(
         plot_df,
         x="Risk",
-        y="ROIC",
+        y="EconomicScore",
         size="BubbleSize",
         size_max=45,
         color="EconomicScore",
         color_continuous_scale="RdYlGn",
         hover_name="Ticker",
-        text="Ticker",
         title="Screened Candidates"
-    )
-
-    fig.update_traces(
-        textposition="top right"
     )
 
     fig.update_layout(
         height=700,
         xaxis_title="Forensic Risk",
-        yaxis_title="ROIC",
+        yaxis_title="Economic Score",
         coloraxis_colorbar_title="Economic Score",
-        showlegend=False
+        showlegend=False,
+        hovermode="closest"
+    )
+
+    fig.update_xaxes(
+        zeroline=True
     )
 
     fig.update_yaxes(
-        tickformat=".0%"
+        zeroline=True
     )
 
     return fig
-
 
 # =====================================================
 # Portfolio Charts
