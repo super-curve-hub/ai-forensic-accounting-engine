@@ -15,8 +15,7 @@ from charts import (
     screen_scatter,
     portfolio_scatter,
     portfolio_weights_chart,
-    optimized_weights_chart,
-    economic_ranking_chart
+    optimized_weights_chart
 )
 
 from screener import (
@@ -176,35 +175,62 @@ def render_compare(wacc):
 
         if not compare_df.empty:
 
-            ranked = rank_companies(compare_df)
+            ranked = rank_companies(
+                compare_df
+            )
 
             st.markdown(
                 f"### Comparing {len(ranked)} Companies"
             )
 
             st.plotly_chart(
-                economic_ranking_chart(ranked),
+                compare_scatter(
+                    ranked
+                ),
                 use_container_width=True
             )
 
-            st.plotly_chart(
-                compare_scatter(ranked),
-                use_container_width=True
-            )
+            st.write("")
 
-            with st.expander("Ranking Data"):
+            display_cols = [
+                c
+                for c in [
+                    "Ticker",
+                    "EconomicScore",
+                    "ROIC",
+                    "ROIC-WACC",
+                    "Risk",
+                    "Quality",
+                    "Grade"
+                ]
+                if c in ranked.columns
+            ]
+
+            with st.expander(
+                "Ranking Data",
+                expanded=True
+            ):
+
                 st.dataframe(
-                    ranked,
+                    ranked[
+                        display_cols
+                    ].sort_values(
+                        "EconomicScore",
+                        ascending=False
+                    ),
                     use_container_width=True
                 )
 
         if not errors.empty:
-            with st.expander("Errors"):
+
+            with st.expander(
+                "Errors"
+            ):
+
                 st.dataframe(
                     errors,
                     use_container_width=True
                 )
-
 
 def render_screening(wacc):
 
