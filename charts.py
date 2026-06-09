@@ -119,6 +119,7 @@ def compare_scatter(compare_df):
         color="EconomicScore",
         color_continuous_scale="RdYlGn",
         hover_name="Ticker",
+        text="Ticker",
         hover_data={
             "ROIC": ":.1%",
             "ROIC-WACC": ":.1%",
@@ -127,6 +128,11 @@ def compare_scatter(compare_df):
             "Quality": ":.0f"
         },
         title="Economic Profit vs Risk"
+    )
+
+    fig.update_traces(
+        textposition="top center",
+        textfont_size=11
     )
 
     fig.update_layout(
@@ -149,7 +155,7 @@ def compare_scatter(compare_df):
     )
 
     return fig
-    
+
 # =====================================================
 # Screening Scatter
 # =====================================================
