@@ -95,13 +95,19 @@ def compare_scatter(compare_df):
     if "EconomicScore" in plot_df.columns:
 
         plot_df["BubbleSize"] = (
-            plot_df["EconomicScore"] ** 0.5
+            plot_df["EconomicScore"]
+            .fillna(1)
+            .clip(lower=1)
+            ** 0.5
         )
 
     else:
 
         plot_df["BubbleSize"] = (
-            plot_df["Quality"] ** 0.5
+            plot_df["Quality"]
+            .fillna(1)
+            .clip(lower=1)
+            ** 0.5
         )
 
     fig = px.scatter(
@@ -113,6 +119,13 @@ def compare_scatter(compare_df):
         color="EconomicScore",
         color_continuous_scale="RdYlGn",
         hover_name="Ticker",
+        hover_data={
+            "ROIC": ":.1%",
+            "ROIC-WACC": ":.1%",
+            "Risk": ":.1f",
+            "EconomicScore": ":.1f",
+            "Quality": ":.0f"
+        },
         title="Economic Profit vs Risk"
     )
 
@@ -121,19 +134,21 @@ def compare_scatter(compare_df):
         xaxis_title="Forensic Risk",
         yaxis_title="Economic Score",
         coloraxis_colorbar_title="Economic Score",
-        showlegend=False
+        showlegend=False,
+        hovermode="closest"
     )
 
     fig.update_xaxes(
-        zeroline=True
+        zeroline=True,
+        zerolinewidth=1
     )
 
     fig.update_yaxes(
-        zeroline=True
+        zeroline=True,
+        zerolinewidth=1
     )
 
     return fig
-
 # =====================================================
 # Screening Scatter
 # =====================================================
