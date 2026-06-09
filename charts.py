@@ -18,8 +18,7 @@ def render_trend_charts(result):
         tmp = df.copy()
 
         tmp["ROIC_pct"] = (
-            tmp["ROIC_TTM"]
-            * 100
+            tmp["ROIC_TTM"] * 100
         )
 
         fig = px.line(
@@ -43,8 +42,7 @@ def render_trend_charts(result):
         tmp = df.copy()
 
         tmp["Accrual_pct"] = (
-            tmp["AccrualRatio"]
-            * 100
+            tmp["AccrualRatio"] * 100
         )
 
         fig = px.line(
@@ -106,14 +104,14 @@ def economic_ranking_chart(df):
     fig.update_layout(
         height=550,
         xaxis_title="Ticker",
-        yaxis_title="EconomicScore"
+        yaxis_title="Economic Score"
     )
 
     return fig
 
 
 # =====================================================
-# ROIC vs Risk Scatter
+# Compare Scatter
 # =====================================================
 
 def compare_scatter(compare_df):
@@ -121,111 +119,52 @@ def compare_scatter(compare_df):
     if compare_df.empty:
         return px.scatter()
 
-    size_col = (
-        "EconomicScore"
-        if "EconomicScore" in compare_df.columns
-        else "Quality"
-    )
+    plot_df = compare_df.copy()
+
+    if "EconomicScore" in plot_df.columns:
+
+        plot_df["BubbleSize"] = (
+            plot_df["EconomicScore"] ** 0.5
+        )
+
+    else:
+
+        plot_df["BubbleSize"] = (
+            plot_df["Quality"] ** 0.5
+        )
 
     fig = px.scatter(
-        compare_df,
+        plot_df,
         x="Risk",
         y="ROIC",
-        size=size_col,
-        color="Grade",
-        text="Ticker",
+        size="BubbleSize",
+        size_max=45,
+        color="EconomicScore",
+        color_continuous_scale="RdYlGn",
         hover_name="Ticker",
+        text="Ticker",
         title="ROIC vs Forensic Risk"
     )
 
     fig.update_traces(
-        textposition="top center"
+        textposition="top right"
     )
 
     fig.update_layout(
-        height=650,
+        height=700,
         xaxis_title="Forensic Risk",
-        yaxis_title="ROIC"
+        yaxis_title="ROIC",
+        coloraxis_colorbar_title="Economic Score",
+        showlegend=False
     )
 
-    return fig
-
-
-# =====================================================
-# Regime Heatmap
-# =====================================================
-
-def regime_heatmap(df):
-
-    if df.empty:
-        return px.imshow(
-            [[0]],
-            title="Regime Heatmap"
-        )
-
-    heat = df.copy()
-
-    if "ROIC" in heat.columns:
-        heat["ROIC"] = (
-            heat["ROIC"]
-            * 100
-        )
-
-    if "ROIC-WACC" in heat.columns:
-        heat["ROIC-WACC"] = (
-            heat["ROIC-WACC"]
-            * 100
-        )
-
-    if "Accrual" in heat.columns:
-        heat["Accrual"] = (
-            heat["Accrual"]
-            * 100
-        )
-
-    if "CFO/NI" in heat.columns:
-        heat["CFO/NI"] = (
-            heat["CFO/NI"]
-            * 50
-        )
-
-    if "SBC/Revenue" in heat.columns:
-        heat["SBC/Revenue"] = (
-            heat["SBC/Revenue"]
-            * 100
-        )
-
-    cols = [
-        "ROIC",
-        "ROIC-WACC",
-        "Accrual",
-        "CFO/NI",
-        "SBC/Revenue",
-        "Risk",
-        "Quality"
-    ]
-
-    available = [
-        c
-        for c in cols
-        if c in heat.columns
-    ]
-
-    matrix = heat[
-        ["Ticker"] + available
-    ].set_index(
-        "Ticker"
+    fig.update_xaxes(
+        zeroline=True
     )
 
-    fig = px.imshow(
-        matrix,
-        aspect="auto",
-        text_auto=".0f",
-        title="Regime Heatmap"
-    )
-
-    fig.update_layout(
-        height=650
+    fig.update_yaxes(
+        zeroline=True,
+        tickformat=".0%"
     )
 
     return fig
@@ -240,38 +179,54 @@ def screen_scatter(screen_df):
     if screen_df.empty:
         return px.scatter()
 
-    size_col = (
-        "EconomicScore"
-        if "EconomicScore" in screen_df.columns
-        else "Quality"
-    )
+    plot_df = screen_df.copy()
+
+    if "EconomicScore" in plot_df.columns:
+
+        plot_df["BubbleSize"] = (
+            plot_df["EconomicScore"] ** 0.5
+        )
+
+    else:
+
+        plot_df["BubbleSize"] = (
+            plot_df["Quality"] ** 0.5
+        )
 
     fig = px.scatter(
-        screen_df,
+        plot_df,
         x="Risk",
         y="ROIC",
-        size=size_col,
-        color="Regime",
-        text="Ticker",
+        size="BubbleSize",
+        size_max=45,
+        color="EconomicScore",
+        color_continuous_scale="RdYlGn",
         hover_name="Ticker",
+        text="Ticker",
         title="Screened Candidates"
     )
 
     fig.update_traces(
-        textposition="top center"
+        textposition="top right"
     )
 
     fig.update_layout(
-        height=650,
+        height=700,
         xaxis_title="Forensic Risk",
-        yaxis_title="ROIC"
+        yaxis_title="ROIC",
+        coloraxis_colorbar_title="Economic Score",
+        showlegend=False
+    )
+
+    fig.update_yaxes(
+        tickformat=".0%"
     )
 
     return fig
 
 
 # =====================================================
-# Portfolio Optimizer Charts
+# Portfolio Charts
 # =====================================================
 
 def portfolio_scatter(df):
@@ -297,13 +252,17 @@ def portfolio_scatter(df):
     )
 
     fig.update_traces(
-        textposition="top center"
+        textposition="top right"
     )
 
     fig.update_layout(
         height=650,
         xaxis_title="ROIC-WACC",
         yaxis_title="ROIC"
+    )
+
+    fig.update_yaxes(
+        tickformat=".0%"
     )
 
     return fig
