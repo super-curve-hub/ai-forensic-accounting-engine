@@ -4,30 +4,36 @@ from engine import run_forensic_engine
 
 
 DEFAULT_UNIVERSE = [
-    "NVDA",
-    "AVGO",
-    "AMD",
-    "MU",
-    "MRVL",
-    "AAPL",
-    "MSFT",
-    "META",
-    "GOOG",
-    "AMZN",
-    "TSLA",
-    "AUR",
-    "PLTR",
-    "SNOW",
-    "CRWD"
+     "COHR",   # Coherent
+    "LITE",   # Lumentum
+    "AAOI",   # Applied Optoelectronics
+
+    "NVDA",   # AI GPU
+    "AVGO",   # Broadcom
+    "ANET",   # Arista Networks
+    "MRVL",   # Marvell
+
+    "AMD",    # AI Accelerator
+    "MU",     # HBM
+    "TSM",    # Foundry
+
+    "CIEN",   # Optical Networking
+    "FN",     # Flex
+    "GLW",    # Corning
+
+    "AMZN",   # AWS
+    "MSFT",   # Azure
+    "META"    # AI Capex
 ]
 
 DEFAULT_WATCHLIST = [
-    "NVDA",
+    "COHR",
+    "LITE",
+    "AAOI",
     "AVGO",
-    "AAPL",
-    "MSFT",
-    "META",
-    "AUR"
+    "ANET",
+    "MRVL",
+    "NVDA"
 ]
 
 
