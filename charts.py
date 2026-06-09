@@ -224,19 +224,15 @@ def portfolio_scatter(df):
         y="ROIC",
         size=size_col,
         color="Grade",
-        text="Ticker",
         hover_name="Ticker",
         title="Portfolio ROIC vs Economic Spread"
-    )
-
-    fig.update_traces(
-        textposition="top right"
     )
 
     fig.update_layout(
         height=650,
         xaxis_title="ROIC-WACC",
-        yaxis_title="ROIC"
+        yaxis_title="ROIC",
+        hovermode="closest"
     )
 
     fig.update_yaxes(
@@ -244,7 +240,6 @@ def portfolio_scatter(df):
     )
 
     return fig
-
 
 def portfolio_weights_chart(df):
 
